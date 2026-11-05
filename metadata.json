@@ -1,0 +1,6 @@
+{
+  "name": "One More Astronaut - NASA Space Apps",
+  "description": "An interactive cinematic 3D solar system experience and invitation to join our NASA Space Apps Challenge team.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
