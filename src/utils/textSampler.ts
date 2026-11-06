@@ -30,8 +30,7 @@ export async function generateMessagePoints(
 
   ctx.clearRect(0, 0, width, height);
 
-  // Exact 3 lines
-  const line1 = 'مش عايزين رابع';
+  const line1 = 'مش عايزين خامس';
   const line2 = 'معاكم في تيم';
   const line3 = 'NASA SPACE APPS؟';
 
@@ -123,12 +122,10 @@ export async function generateMessagePoints(
     const tx = (pt.x - midX) * scale3DX;
     const ty = -(pt.y - midY) * scale3DY;
 
-    // Organic 3D letter depth with subtle undulation
     const depthCurve = Math.sin(tx * 0.08) * 1.5 + Math.cos(ty * 0.1) * 1.0;
     const microJitter = (pseudoRandom(i * 3 + 1) - 0.5) * 1.2;
     const tz = depthCurve + microJitter;
 
-    // Capture hero satellite anchors
     if (!qMarkPoint && pt.line === 3 && pt.x < minX + textW * 0.22) {
       qMarkPoint = [tx, ty + 1.2, tz + 2.5];
     }
@@ -139,38 +136,33 @@ export async function generateMessagePoints(
       line2DotPoint = [tx, ty + 1.5, tz + 2.5];
     }
 
-    // WIDE, REALISTIC SOLAR SYSTEM DISTRIBUTION
-    // Rather than being cramped into a dense clump, asteroids are spread across a vast space:
-    // 1. Main Asteroid Belt (between Mars 48 and Jupiter 92): r ~ 56 to 82, wide disc
-    // 2. Jupiter Trojan Swarms (L4 & L5 at 60 deg ahead/behind Jupiter): r ~ 88 to 96
-    // 3. Kuiper Belt & Outer Disc: r ~ 110 to 220, expansive outer space field
-    // 4. Inner Planetary Dust: r ~ 25 to 50
+    // REALISTIC VAST DISTRIBUTION ACROSS SOLAR SYSTEM
     const distributionZone = pseudoRandom(i * 7 + 3);
     let r = 0;
     let theta = 0;
     let sy = 0;
 
-    if (distributionZone < 0.50) {
-      // Main Asteroid Belt (wide, realistic disc between Mars & Jupiter)
-      r = 56 + pseudoRandom(i * 13 + 7) * 26; // 56 to 82
+    if (distributionZone < 0.52) {
+      // Main Asteroid Belt (realistic ring between Mars and Jupiter)
+      r = 56 + pseudoRandom(i * 13 + 7) * 28;
       theta = pseudoRandom(i * 11 + 5) * Math.PI * 2;
-      sy = (pseudoRandom(i * 17 + 2) - 0.5) * 6.5; // Natural disc thickness
-    } else if (distributionZone < 0.72) {
-      // Jupiter Trojans (Lagrange L4 & L5 orbital swarms)
+      sy = (pseudoRandom(i * 17 + 2) - 0.5) * 6.0;
+    } else if (distributionZone < 0.74) {
+      // Jupiter Trojan Swarms
       const isL4 = pseudoRandom(i * 19 + 1) > 0.5;
       const baseAngle = isL4 ? Math.PI / 3 : -Math.PI / 3;
-      const angleDispersion = (pseudoRandom(i * 23 + 4) - 0.5) * 0.6; // ~35 degrees spread
+      const angleDispersion = (pseudoRandom(i * 23 + 4) - 0.5) * 0.5;
       theta = baseAngle + angleDispersion;
-      r = 88 + pseudoRandom(i * 29 + 6) * 8; // 88 to 96
-      sy = (pseudoRandom(i * 31 + 9) - 0.5) * 8.0;
+      r = 88 + pseudoRandom(i * 29 + 6) * 8;
+      sy = (pseudoRandom(i * 31 + 9) - 0.5) * 7.5;
     } else if (distributionZone < 0.90) {
-      // Expansive Kuiper Belt & Scattered Cosmic Field
-      r = 110 + pseudoRandom(i * 37 + 8) * 110; // 110 to 220 (spans the entire outer solar system!)
+      // Outer Kuiper Belt Debris
+      r = 115 + pseudoRandom(i * 37 + 8) * 100;
       theta = pseudoRandom(i * 41 + 12) * Math.PI * 2;
-      sy = (pseudoRandom(i * 43 + 3) - 0.5) * 16.0;
+      sy = (pseudoRandom(i * 43 + 3) - 0.5) * 14.0;
     } else {
-      // Inner planetary debris field
-      r = 25 + pseudoRandom(i * 47 + 5) * 25; // 25 to 50
+      // Inner planetary dust
+      r = 26 + pseudoRandom(i * 47 + 5) * 24;
       theta = pseudoRandom(i * 53 + 7) * Math.PI * 2;
       sy = (pseudoRandom(i * 59 + 2) - 0.5) * 4.0;
     }
@@ -178,33 +170,29 @@ export async function generateMessagePoints(
     const sx = Math.cos(theta) * r;
     const sz = Math.sin(theta) * r;
 
-    // Rock / Particle types & aesthetic
-    const typeRoll = pseudoRandom(i * 61 + 11);
-    let type: 'asteroid' | 'crystal' | 'stardust' | 'ion' = 'asteroid';
-    let rgb: [number, number, number] = [0.75, 0.72, 0.68];
-    // Delicate, well-proportioned size so the field feels expansive and refined
-    let size = 0.28 + pseudoRandom(i * 67 + 13) * 0.36;
+    // AUTHENTIC ASTEROID ROCK SPECTRUM (NO NEON GLOW / LIGHTNING!)
+    // Real carbonaceous chondrites, stony silicate asteroids, and nickel-iron meteorites
+    const rockClass = pseudoRandom(i * 61 + 11);
+    let rgb: [number, number, number] = [0.38, 0.36, 0.34]; // Charcoal stone
+    const size = 0.32 + pseudoRandom(i * 67 + 13) * 0.32;
 
-    if (typeRoll < 0.55) {
-      type = 'asteroid';
-      const tone = 0.62 + pseudoRandom(i * 71 + 3) * 0.28;
-      rgb = [tone * 0.95, tone * 0.9, tone * 0.82];
-    } else if (typeRoll < 0.78) {
-      type = 'crystal';
-      rgb = [0.25 + pseudoRandom(i) * 0.15, 0.8 + pseudoRandom(i * 2) * 0.2, 1.0];
-      size *= 0.85;
-    } else if (typeRoll < 0.92) {
-      type = 'stardust';
-      rgb = [1.0, 0.85 + pseudoRandom(i) * 0.15, 0.4 + pseudoRandom(i * 4) * 0.25];
-      size *= 0.75;
+    if (rockClass < 0.50) {
+      // C-type Carbonaceous Chondrite (Dark, carbon-rich, authentic asteroid belt rock)
+      const c = 0.26 + pseudoRandom(i * 71 + 3) * 0.16;
+      rgb = [c, c * 0.96, c * 0.92];
+    } else if (rockClass < 0.82) {
+      // S-type Stony Silicate (Dusty brownish-gray regolith, iron-magnesium silicate)
+      const s = 0.38 + pseudoRandom(i * 73 + 5) * 0.20;
+      rgb = [s * 1.05, s * 0.98, s * 0.88];
     } else {
-      type = 'ion';
-      rgb = [0.6, 0.5, 1.0];
-      size *= 1.05;
+      // M-type Metallic Nickel-Iron (Specular metallic meteorite sheen)
+      const m = 0.48 + pseudoRandom(i * 79 + 9) * 0.22;
+      rgb = [m * 0.98, m * 0.96, m * 0.94];
     }
 
-    if (pt.line === 3 && type !== 'asteroid') {
-      rgb = [0.98, 0.78, 0.32]; // NASA warm gold brilliance
+    // Subtle bronze-gold meteorite mineral tone for Line 3 (NASA Space Apps)
+    if (pt.line === 3 && rockClass > 0.6) {
+      rgb = [0.58, 0.48, 0.34];
     }
 
     particles.push({
@@ -213,14 +201,14 @@ export async function generateMessagePoints(
       currentPos: [sx, sy, sz],
       color: rgb,
       size,
-      type,
-      phaseOffset: pseudoRandom(i * 73 + 19) * 0.28,
+      type: 'asteroid', // Real space asteroid
+      phaseOffset: pseudoRandom(i * 83 + 19) * 0.28,
       rotationSpeed: [
-        (pseudoRandom(i * 79 + 1) - 0.5) * 1.5,
-        (pseudoRandom(i * 83 + 2) - 0.5) * 1.5,
-        (pseudoRandom(i * 89 + 3) - 0.5) * 1.5,
+        (pseudoRandom(i * 89 + 1) - 0.5) * 1.2,
+        (pseudoRandom(i * 91 + 2) - 0.5) * 1.2,
+        (pseudoRandom(i * 97 + 3) - 0.5) * 1.2,
       ],
-      driftSeed: pseudoRandom(i * 97 + 5) * 100,
+      driftSeed: pseudoRandom(i * 101 + 5) * 100,
     });
   }
 
@@ -257,11 +245,12 @@ function generateFallbackPoints(totalCount: number): SampledPointsResult {
     const ty = -(row - 25) * 0.9;
     const tz = (pseudoRandom(i * 2) - 0.5) * 2;
 
+    const c = 0.35 + (i % 5) * 0.05;
     particles.push({
       solarPos: [sx, sy, sz],
       targetPos: [tx, ty, tz],
       currentPos: [sx, sy, sz],
-      color: [0.85, 0.8, 0.7],
+      color: [c, c * 0.95, c * 0.9],
       size: 0.35,
       type: 'asteroid',
       phaseOffset: pseudoRandom(i * 3) * 0.3,

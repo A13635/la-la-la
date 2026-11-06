@@ -41,6 +41,16 @@ export const ControlDock: React.FC<ControlDockProps> = ({
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  React.useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'h' || e.key === 'H') {
+        setIsCollapsed((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
   return (
     <div
       className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[94vw] max-w-[820px] transition-all duration-300 ease-out select-none ${

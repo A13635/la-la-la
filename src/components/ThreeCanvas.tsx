@@ -5,13 +5,11 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { PLANETS_DATA } from '../data/planets';
 import { TextureGenerator } from '../utils/proceduralTextures';
 import { generateMessagePoints, SampledPointsResult } from '../utils/textSampler';
-import { createISSModel, createHubbleModel, createVoyagerModel } from '../models/satellites';
 import { spaceAudio } from '../utils/spaceAudio';
 import { ParticleData } from '../types/space';
 
 // Reusable math objects at module scope (Zero GC in render loop)
 const _vecA = new THREE.Vector3();
-const _vecB = new THREE.Vector3();
 const _mat4 = new THREE.Matrix4();
 const _quat = new THREE.Quaternion();
 const _scale = new THREE.Vector3();
@@ -39,7 +37,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const mountRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // State refs for animation loop
   const progressRef = useRef(progress);
   progressRef.current = progress;
 
@@ -59,16 +56,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const particlesDataRef = useRef<ParticleData[]>([]);
   const planetsGroupRef = useRef<THREE.Group[]>([]);
   const orbitLinesGroupRef = useRef<THREE.Group | null>(null);
-  const satellitesRef = useRef<{ group: THREE.Group; initialPlanet?: string; targetPos: [number, number, number] }[]>([]);
   const sunGroupRef = useRef<THREE.Group | null>(null);
   const sunLightRef = useRef<THREE.PointLight | null>(null);
   const sunMeshRef = useRef<THREE.Mesh | null>(null);
   const sunGlowMeshRef = useRef<THREE.Mesh | null>(null);
+  const sunRaysMeshRef = useRef<THREE.Mesh | null>(null);
 
-  // Smooth interpolation progress
   const smoothProgressRef = useRef(progress);
-
-  // Trigger sound effect on transition threshold
   const lastPhaseRef = useRef<'solar' | 'transforming' | 'message'>('solar');
 
   useEffect(() => {
@@ -101,77 +95,79 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
     })();
 
-    // 2. Renderer setup
+    // 2. High-Fidelity Renderer with balanced, gentle exposure (no harsh glare)
     const renderer = new THREE.WebGLRenderer({
       antialias: !isSoftwareGl,
       powerPreference: 'high-performance',
       alpha: false,
+      stencil: false,
+      depth: true,
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    // Calibrated subtle exposure: deep space darks without blinding highlights
+    renderer.toneMappingExposure = 0.88;
     container.appendChild(renderer.domElement);
 
     // 3. Scene & Camera setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020308);
-    scene.fog = new THREE.FogExp2(0x020308, 0.0022);
+    scene.background = new THREE.Color(0x010204);
+    scene.fog = new THREE.FogExp2(0x010204, 0.0016);
 
     const camera = new THREE.PerspectiveCamera(
       50,
       container.clientWidth / container.clientHeight,
       0.1,
-      1200
+      1400
     );
-    // Initial cinematic perspective: elevated overview of the solar system
     camera.position.set(0, 48, 120);
     cameraRef.current = camera;
 
-    // Mandatory RoomEnvironment for realistic PBR reflections
+    // Ambient studio reflections at low intensity
     try {
       const pmremGenerator = new THREE.PMREMGenerator(renderer);
-      scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.02).texture;
       pmremGenerator.dispose();
     } catch {
-      // Graceful fallback
+      // Fallback
     }
 
-    // 4. Controls
+    // 4. OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = !isSoftwareGl;
     controls.dampingFactor = 0.05;
-    controls.maxDistance = 380;
+    controls.maxDistance = 420;
     controls.minDistance = 15;
     controls.maxPolarAngle = Math.PI * 0.88;
     controls.minPolarAngle = 0.1;
     controlsRef.current = controls;
 
-    // 5. Lighting Rig
-    // Sun Central Point Light (Moves with Sun)
-    const sunLight = new THREE.PointLight(0xfff6dc, 4.5, 450, 1.1);
+    // 5. Balanced, Soft Lighting Rig (Reduced intensities for natural deep space)
+    // Soft central point light from the Sun (reduced from 5.0 to 1.8)
+    const sunLight = new THREE.PointLight(0xfff0d0, 1.8, 450, 1.2);
     sunLight.position.set(0, 0, 0);
     scene.add(sunLight);
     sunLightRef.current = sunLight;
 
-    // Directional Key Light
-    const dirLight = new THREE.DirectionalLight(0xffeedd, 1.1);
-    dirLight.position.set(70, 45, 60);
+    // Gentle directional fill light (reduced from 1.2 to 0.4)
+    const dirLight = new THREE.DirectionalLight(0xe8f0ff, 0.4);
+    dirLight.position.set(70, 45, 55);
     scene.add(dirLight);
 
-    // Cool Cosmic Hemisphere Fill
-    const hemiLight = new THREE.HemisphereLight(0x406085, 0x080915, 0.85);
+    // Very subtle cool deep space hemisphere ambient (reduced from 0.9 to 0.3)
+    const hemiLight = new THREE.HemisphereLight(0x22354c, 0x030408, 0.3);
     scene.add(hemiLight);
 
-    // 6. Deep Space Background: Cosmic Starfield
-    const starsCount = 5000;
+    // 6. Deep Space Background: Starfield + Subtle Nebulae
+    const starsCount = 4800;
     const starGeo = new THREE.BufferGeometry();
     const starPositions = new Float32Array(starsCount * 3);
     const starColors = new Float32Array(starsCount * 3);
 
     for (let i = 0; i < starsCount; i++) {
-      const r = 350 + Math.random() * 450;
+      const r = 380 + Math.random() * 500;
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(Math.random() * 2 - 1);
 
@@ -180,33 +176,59 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       starPositions[i * 3 + 2] = r * Math.cos(phi);
 
       const roll = Math.random();
-      if (roll < 0.4) {
-        starColors[i * 3] = 0.85; starColors[i * 3 + 1] = 0.92; starColors[i * 3 + 2] = 1.0;
-      } else if (roll < 0.75) {
-        starColors[i * 3] = 1.0; starColors[i * 3 + 1] = 0.95; starColors[i * 3 + 2] = 0.85;
+      if (roll < 0.45) {
+        starColors[i * 3] = 0.82; starColors[i * 3 + 1] = 0.88; starColors[i * 3 + 2] = 0.95;
+      } else if (roll < 0.8) {
+        starColors[i * 3] = 0.95; starColors[i * 3 + 1] = 0.90; starColors[i * 3 + 2] = 0.82;
       } else {
-        starColors[i * 3] = 1.0; starColors[i * 3 + 1] = 0.75; starColors[i * 3 + 2] = 0.6;
+        starColors[i * 3] = 0.95; starColors[i * 3 + 1] = 0.65; starColors[i * 3 + 2] = 0.48;
       }
     }
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
     starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
 
     const starMat = new THREE.PointsMaterial({
-      size: 1.5,
+      size: 1.1,
       vertexColors: true,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.75,
     });
     const starField = new THREE.Points(starGeo, starMat);
     scene.add(starField);
 
-    // 7. Sun Group (Central in Scene 1, moves to background framing in Scene 3)
+    // Faint, subtle cosmic nebula dust in background (low opacity)
+    const nebulaTex = TextureGenerator.getNebulaTexture();
+    const nebulaGeo = new THREE.PlaneGeometry(320, 320);
+    const nebulaMat = new THREE.MeshBasicMaterial({
+      map: nebulaTex,
+      transparent: true,
+      opacity: 0.08,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    const nebulaCoords: [number, number, number, number][] = [
+      [120, 80, -320, 0.4],
+      [-180, -60, -350, -0.6],
+      [-80, 140, -300, 1.2],
+      [220, -110, -340, 2.1],
+    ];
+
+    nebulaCoords.forEach(([nx, ny, nz, rot]) => {
+      const nebulaMesh = new THREE.Mesh(nebulaGeo, nebulaMat);
+      nebulaMesh.position.set(nx, ny, nz);
+      nebulaMesh.rotation.z = rot;
+      scene.add(nebulaMesh);
+    });
+
+    // 7. Radiant Sun with Delicate Corona Glow (Soft, not blinding)
     const sunGroup = new THREE.Group();
     sunGroup.name = 'SunGroup';
     scene.add(sunGroup);
     sunGroupRef.current = sunGroup;
 
-    const sunGeo = new THREE.SphereGeometry(6.5, 32, 32);
+    const sunGeo = new THREE.SphereGeometry(6.6, 36, 36);
     const sunMat = new THREE.MeshBasicMaterial({
       map: TextureGenerator.getSunTexture(),
     });
@@ -214,12 +236,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     sunGroup.add(sunMesh);
     sunMeshRef.current = sunMesh;
 
-    // Atmospheric Corona Glow around Sun
-    const coronaGeo = new THREE.SphereGeometry(7.8, 24, 24);
+    // Atmospheric Corona Inner Glow (soft opacity 0.14)
+    const coronaGeo = new THREE.SphereGeometry(7.6, 28, 28);
     const coronaMat = new THREE.MeshBasicMaterial({
-      color: 0xffaa33,
+      color: 0xffaa22,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.14,
       side: THREE.BackSide,
       blending: THREE.AdditiveBlending,
     });
@@ -227,18 +249,30 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     sunGroup.add(coronaMesh);
     sunGlowMeshRef.current = coronaMesh;
 
-    // 8. Planets & Physically Tilted Orbit Hierarchy
+    // Outer subtle flare halo
+    const raysGeo = new THREE.PlaneGeometry(16, 16);
+    const raysMat = new THREE.MeshBasicMaterial({
+      map: TextureGenerator.getParticleGlowTexture(),
+      transparent: true,
+      opacity: 0.18,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const sunRaysMesh = new THREE.Mesh(raysGeo, raysMat);
+    sunGroup.add(sunRaysMesh);
+    sunRaysMeshRef.current = sunRaysMesh;
+
+    // 8. Planets & Physically Tilted Orbits (Clean, no oversized satellites)
     const planetGroups: THREE.Group[] = [];
     const orbitLinesGroup = new THREE.Group();
     scene.add(orbitLinesGroup);
     orbitLinesGroupRef.current = orbitLinesGroup;
 
     PLANETS_DATA.forEach((config) => {
-      // Planet Root Group (handles orbital positioning & framing transition)
       const planetGroup = new THREE.Group();
       planetGroup.name = config.name;
 
-      // Realistic Orbit Line on Ecliptic with subtle inclination
+      // Realistic Orbit Line (soft opacity 0.18)
       const orbitCurve = new THREE.EllipseCurve(
         0, 0,
         config.distance, config.distance,
@@ -250,25 +284,23 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       const orbitGeo = new THREE.BufferGeometry().setFromPoints(
         orbitPoints.map((p) => {
           const pt = new THREE.Vector3(p.x, 0, p.y);
-          // Apply realistic physical orbital inclination
           pt.applyAxisAngle(new THREE.Vector3(1, 0, 0), config.orbitInclination);
           return pt;
         })
       );
       const orbitMat = new THREE.LineBasicMaterial({
-        color: 0x3d5a80,
+        color: 0x2b4c73,
         transparent: true,
-        opacity: 0.25,
+        opacity: 0.18,
       });
       const orbitLine = new THREE.Line(orbitGeo, orbitMat);
       orbitLinesGroup.add(orbitLine);
 
-      // Planet Tilt Pivot: preserves physical axial tilt
+      // Axial tilt pivot
       const tiltGroup = new THREE.Group();
       tiltGroup.rotation.z = config.axialTilt;
       planetGroup.add(tiltGroup);
 
-      // Planet Sphere
       let texture: THREE.CanvasTexture;
       switch (config.textureType) {
         case 'earth':
@@ -299,7 +331,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           texture = TextureGenerator.getEarthTexture();
       }
 
-      const pGeo = new THREE.SphereGeometry(config.radius, 32, 32);
+      const pGeo = new THREE.SphereGeometry(config.radius, 36, 36);
       const pMat = new THREE.MeshStandardMaterial({
         map: texture,
         roughness: config.roughness,
@@ -309,23 +341,25 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       planetMesh.name = `${config.name}_Sphere`;
       tiltGroup.add(planetMesh);
 
-      // Earth clouds & Moon
+      // Earth with natural, accurately-proportioned Moon ONLY (NO oversized satellites!)
       if (config.textureType === 'earth') {
-        const cloudGeo = new THREE.SphereGeometry(config.radius * 1.025, 32, 32);
+        // Rotating cloud layer
+        const cloudGeo = new THREE.SphereGeometry(config.radius * 1.02, 36, 36);
         const cloudMat = new THREE.MeshStandardMaterial({
           map: TextureGenerator.getEarthCloudsTexture(),
           transparent: true,
           opacity: 0.65,
           blending: THREE.AdditiveBlending,
+          depthWrite: false,
         });
         const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
         cloudMesh.name = 'EarthClouds';
         tiltGroup.add(cloudMesh);
 
-        // Moon
-        const moonGeo = new THREE.SphereGeometry(config.radius * 0.27, 16, 16);
+        // Moon (natural satellite, accurately proportioned)
+        const moonGeo = new THREE.SphereGeometry(config.radius * 0.27, 18, 18);
         const moonMat = new THREE.MeshStandardMaterial({
-          color: 0xc4c7cc,
+          color: 0xb5b8bd,
           roughness: 0.9,
           metalness: 0.1,
         });
@@ -335,12 +369,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         tiltGroup.add(moonMesh);
       }
 
-      // Saturn Rings (aligned with axial tilt)
+      // Saturn Concentric Rings
       if (config.hasRings && config.ringInnerRadius && config.ringOuterRadius) {
         const ringGeo = new THREE.RingGeometry(
           config.ringInnerRadius,
           config.ringOuterRadius,
-          64
+          80
         );
         const pos = ringGeo.attributes.position;
         const uvs = ringGeo.attributes.uv;
@@ -357,7 +391,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           side: THREE.DoubleSide,
           transparent: true,
           opacity: 0.92,
-          roughness: 0.6,
+          roughness: 0.5,
         });
         const ringMesh = new THREE.Mesh(ringGeo, ringMat);
         ringMesh.rotation.x = Math.PI / 2;
@@ -369,40 +403,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     });
     planetsGroupRef.current = planetGroups;
 
-    // 9. Procedural Composite Satellites
-    const iss = createISSModel();
-    const hubble = createHubbleModel();
-    const voyager = createVoyagerModel();
-
-    iss.scale.setScalar(0.7);
-    hubble.scale.setScalar(0.65);
-    voyager.scale.setScalar(0.6);
-
-    scene.add(iss);
-    scene.add(hubble);
-    scene.add(voyager);
-
-    satellitesRef.current = [
-      { group: iss, initialPlanet: 'Earth', targetPos: [30, 14, 4] },
-      { group: hubble, initialPlanet: 'Earth', targetPos: [-36, -12, 4] },
-      { group: voyager, initialPlanet: 'Jupiter', targetPos: [0, 2, 5] },
-    ];
-
-    // 10. Load Message Particles with wide space distribution
+    // 9. Load Message Particles (4,200 space rocks & crystals forming the message)
     let isMounted = true;
     generateMessagePoints(4200).then((result: SampledPointsResult) => {
       if (!isMounted) return;
 
       particlesDataRef.current = result.particles;
 
-      if (result.satelliteAnchorPoints.length >= 3) {
-        satellitesRef.current[0].targetPos = result.satelliteAnchorPoints[0];
-        satellitesRef.current[1].targetPos = result.satelliteAnchorPoints[1];
-        satellitesRef.current[2].targetPos = result.satelliteAnchorPoints[2];
-      }
-
       // Faceted asteroid rock geometry
-      const asteroidGeo = new THREE.DodecahedronGeometry(0.35, 1);
+      const asteroidGeo = new THREE.DodecahedronGeometry(0.34, 1);
       const posAttr = asteroidGeo.attributes.position;
       for (let i = 0; i < posAttr.count; i++) {
         const vx = posAttr.getX(i);
@@ -416,7 +425,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       const instancedMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         roughness: 0.5,
-        metalness: 0.35,
+        metalness: 0.3,
         flatShading: true,
       });
 
@@ -450,7 +459,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       setIsLoading(false);
     });
 
-    // 11. Animation Loop
+    // 10. Animation Loop
     let frameId = 0;
     const clock = new THREE.Clock();
 
@@ -477,13 +486,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       const delta = Math.min(clock.getDelta(), 0.1);
       const elapsed = clock.getElapsedTime();
 
-      // Advance progress if playing
+      // Trigger audio automatically when the animation starts
+      if (elapsed < 4.0 && isPlayingRef.current) {
+        spaceAudio.start();
+      }
+
       if (isPlayingRef.current) {
         const newProg = Math.min(1.0, progressRef.current + delta * 0.082);
         onProgressChange(newProg);
       }
 
-      // Smooth progress interpolation
       smoothProgressRef.current = THREE.MathUtils.damp(
         smoothProgressRef.current,
         progressRef.current,
@@ -493,15 +505,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       const currentProg = smoothProgressRef.current;
       const easeProg = easeInOutCubic(currentProg);
 
-      // Orbits lines visibility
       if (orbitLinesGroupRef.current) {
         orbitLinesGroupRef.current.visible = showOrbitsRef.current && currentProg < 0.65;
       }
 
-      // 1. DYNAMIC SUN POSITION:
-      // In Scene 1: Sun is at [0, 0, 0] at the center of the solar system.
-      // In Scene 2 & 3: Sun smoothly moves to SUN_FRAMING_POS [68, 34, -42]!
-      // This completely ensures that the Sun NEVER blocks the word "في" or any part of the text!
+      // Sun Positioning & Subtle Rotation
       if (sunGroupRef.current) {
         sunGroupRef.current.position.x = THREE.MathUtils.lerp(0, SUN_FRAMING_POS.x, easeProg);
         sunGroupRef.current.position.y = THREE.MathUtils.lerp(0, SUN_FRAMING_POS.y, easeProg);
@@ -517,38 +525,37 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         sunMeshRef.current.rotation.y += delta * 0.12;
       }
       if (sunGlowMeshRef.current) {
-        const pulse = 1.0 + Math.sin(elapsed * 2.2) * 0.04;
+        const pulse = 1.0 + Math.sin(elapsed * 2.0) * 0.03;
         sunGlowMeshRef.current.scale.set(pulse, pulse, pulse);
       }
+      if (sunRaysMeshRef.current) {
+        sunRaysMeshRef.current.quaternion.copy(camera.quaternion);
+        const rayPulse = 1.0 + Math.sin(elapsed * 1.5) * 0.05;
+        sunRaysMeshRef.current.scale.set(rayPulse, rayPulse, rayPulse);
+      }
 
-      // 2. PHYSICAL PLANETARY ORBITS (Keplerian speeds & tilt)
+      // Planetary Motion
       planetsGroupRef.current.forEach((group, idx) => {
         const config = PLANETS_DATA[idx];
 
-        // Keplerian physics: calibrated realistic speed factor
         const orbitAngle = elapsed * config.speed * 0.22 + idx * 1.5;
         const orbitX = Math.cos(orbitAngle) * config.distance;
         const orbitZ = Math.sin(orbitAngle) * config.distance;
-        // Subtle realistic orbital inclination plane
         const orbitY = Math.sin(orbitAngle) * (config.distance * Math.tan(config.orbitInclination));
 
-        // Framing position in Scene 3
         const frameX = config.framingPosition[0];
         const frameY = config.framingPosition[1];
         const frameZ = config.framingPosition[2];
 
-        // Smooth transition from orbit to framing position
         group.position.x = THREE.MathUtils.lerp(orbitX, frameX, easeProg);
         group.position.y = THREE.MathUtils.lerp(orbitY, frameY, easeProg);
         group.position.z = THREE.MathUtils.lerp(orbitZ, frameZ, easeProg);
 
-        // Self rotation on tilted axis
         const sphereMesh = group.getObjectByName(`${config.name}_Sphere`);
         if (sphereMesh) {
           sphereMesh.rotation.y += config.rotationSpeed;
         }
 
-        // Earth clouds and Moon
         if (config.textureType === 'earth') {
           const clouds = group.getObjectByName('EarthClouds');
           if (clouds) clouds.rotation.y += 0.003;
@@ -564,37 +571,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         }
       });
 
-      // 3. Satellites
-      satellitesRef.current.forEach((sat, idx) => {
-        let parentPos = _vecA.set(0, 0, 0);
-        if (sat.initialPlanet) {
-          const planetGroup = planetsGroupRef.current.find(
-            (p) => p.name === sat.initialPlanet
-          );
-          if (planetGroup) parentPos = planetGroup.position;
-        }
-
-        const satOrbitAngle = elapsed * (1.6 + idx * 0.4);
-        const satR = 3.6 + idx * 0.8;
-        const satInitX = parentPos.x + Math.cos(satOrbitAngle) * satR;
-        const satInitY = parentPos.y + Math.sin(satOrbitAngle * 1.2) * (satR * 0.4);
-        const satInitZ = parentPos.z + Math.sin(satOrbitAngle) * satR;
-
-        const targetX = sat.targetPos[0];
-        const targetY = sat.targetPos[1];
-        const targetZ = sat.targetPos[2];
-
-        const arcY = Math.sin(easeProg * Math.PI) * 14;
-
-        sat.group.position.x = THREE.MathUtils.lerp(satInitX, targetX, easeProg);
-        sat.group.position.y = THREE.MathUtils.lerp(satInitY, targetY, easeProg) + arcY;
-        sat.group.position.z = THREE.MathUtils.lerp(satInitZ, targetZ, easeProg);
-
-        sat.group.rotation.y += delta * 0.8;
-        sat.group.rotation.x = Math.sin(elapsed + idx) * 0.2;
-      });
-
-      // 4. Asteroid / Stardust Particles Forming the Message
+      // Asteroid Particles
       const instMesh = instancedMeshRef.current;
       const particles = particlesDataRef.current;
 
@@ -606,22 +583,18 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           const adjustedProg = THREE.MathUtils.clamp((currentProg - delay) / (1 - delay * 0.7), 0, 1);
           const t = easeInOutCubic(adjustedProg);
 
-          // Realistic orbital motion for asteroids in vast space (Scene 1)
           const orbitR = Math.sqrt(p.solarPos[0] * p.solarPos[0] + p.solarPos[2] * p.solarPos[2]);
-          // Keplerian drift speed: v ~ 1/sqrt(r)
           const angSpeed = (0.12 * Math.sqrt(60 / Math.max(20, orbitR)));
           const currentAngle = Math.atan2(p.solarPos[2], p.solarPos[0]) + (elapsed * angSpeed);
           const dynamicSolarX = Math.cos(currentAngle) * orbitR;
           const dynamicSolarZ = Math.sin(currentAngle) * orbitR;
           const dynamicSolarY = p.solarPos[1] + Math.sin(elapsed * 0.5 + p.driftSeed) * 0.25;
 
-          // Message formation breathing & 3D undulation (Scene 3)
           const breathWave = Math.sin(elapsed * 1.8 + p.driftSeed * 0.1) * 0.2;
           const targetX = p.targetPos[0];
           const targetY = p.targetPos[1] + breathWave * 0.4;
           const targetZ = p.targetPos[2] + breathWave;
 
-          // Spiral convergence curl
           const swirlAngle = (1 - t) * Math.PI * 2.2 * (p.driftSeed % 2 === 0 ? 1 : -1);
           const swirlRadius = Math.sin(t * Math.PI) * 14.0 * (p.size * 0.85);
 
@@ -648,10 +621,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         instMesh.instanceMatrix.needsUpdate = true;
       }
 
-      // 5. Camera Control & Cinematic Mode
+      // Camera Control & Cinematic Mode
       if (cameraModeRef.current === 'cinematic') {
         if (currentProg < 0.2) {
-          // Scene 1: Entering the Solar System - Slow, majestic camera glide
           const camAngle = elapsed * 0.05 + 0.3;
           targetCameraPos.set(
             Math.cos(camAngle) * 95,
@@ -660,7 +632,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           );
           targetCameraLookAt.set(0, 0, 0);
         } else if (currentProg < 0.88) {
-          // Scene 2: Cosmic Transformation - Camera pulls back & centers on message
           const t2 = (currentProg - 0.2) / 0.68;
           const camY = THREE.MathUtils.lerp(38, 0, t2);
           const camZ = THREE.MathUtils.lerp(95, 82, t2);
@@ -668,7 +639,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           targetCameraPos.set(camX, camY, camZ);
           targetCameraLookAt.set(0, 0, 0);
         } else {
-          // Scene 3: The Message Formed - Centered, subtle celestial float
           const subtleDriftX = Math.sin(elapsed * 0.2) * 3.5;
           const subtleDriftY = Math.cos(elapsed * 0.16) * 1.8;
           targetCameraPos.set(subtleDriftX, subtleDriftY, 82);
@@ -682,6 +652,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         controls.update();
       }
 
+      // Render directly with calibrated exposure (clean, deep contrast)
       renderer.render(scene, camera);
 
       if (isSoftwareGl) {
@@ -724,6 +695,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       sunMat.dispose();
       coronaGeo.dispose();
       coronaMat.dispose();
+      raysGeo.dispose();
+      raysMat.dispose();
+      nebulaGeo.dispose();
+      nebulaMat.dispose();
       if (instancedMeshRef.current) {
         instancedMeshRef.current.geometry.dispose();
         if (Array.isArray(instancedMeshRef.current.material)) {
@@ -742,7 +717,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     <div className="relative w-full h-full overflow-hidden">
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
-      {/* Loading Overlay */}
       {isLoading && (
         <div className="absolute inset-0 bg-black flex flex-col items-center justify-center gap-3 z-50">
           <div className="w-10 h-10 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />

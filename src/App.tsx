@@ -8,22 +8,32 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [cameraMode, setCameraMode] = useState<'cinematic' | 'orbit'>('cinematic');
   const [showOrbits, setShowOrbits] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
 
-  // Resume Web Audio context smoothly on first user interaction
-  useEffect(() => {
-    const handleFirstGesture = () => {
-      spaceAudio.start();
-      window.removeEventListener('pointerdown', handleFirstGesture);
-      window.removeEventListener('keydown', handleFirstGesture);
-    };
-    window.addEventListener('pointerdown', handleFirstGesture);
-    window.addEventListener('keydown', handleFirstGesture);
-    return () => {
-      window.removeEventListener('pointerdown', handleFirstGesture);
-      window.removeEventListener('keydown', handleFirstGesture);
-    };
+  // Resume Web Audio context immediately and on ANY user touch/click/drag
+  const activateAudio = useCallback(() => {
+    spaceAudio.start();
   }, []);
+
+  useEffect(() => {
+    // 1. Attempt immediate audio start (works in browsers that allow autoplay)
+    activateAudio();
+
+    // 2. Capture-phase listeners on window & document:
+    const events = ['pointerdown', 'touchstart', 'mousedown', 'keydown', 'click'];
+    const options = { capture: true, passive: true };
+
+    const handleFirstInteraction = () => {
+      activateAudio();
+      events.forEach((ev) => window.removeEventListener(ev, handleFirstInteraction, options));
+    };
+
+    events.forEach((ev) => window.addEventListener(ev, handleFirstInteraction, options));
+
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, handleFirstInteraction, options));
+    };
+  }, [activateAudio]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -67,7 +77,11 @@ export default function App() {
   }, []);
 
   return (
-    <main className="relative w-screen h-screen overflow-hidden bg-black text-white select-none">
+    <main
+      onClick={activateAudio}
+      onTouchStart={activateAudio}
+      className="relative w-screen h-screen overflow-hidden bg-black text-white select-none"
+    >
       {/* 3D WebGL Canvas Viewport */}
       <ThreeCanvas
         progress={progress}
@@ -78,7 +92,9 @@ export default function App() {
         isMuted={isMuted}
       />
 
-      {/* Ergonomic Collapsible Bottom Control Dock */}
+
+
+      {/* Ergonomic Collapsible Bottom Control Dock (Hidden by default) */}
       <ControlDock
         progress={progress}
         onProgressChange={setProgress}
